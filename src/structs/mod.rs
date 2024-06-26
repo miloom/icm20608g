@@ -172,6 +172,7 @@ impl ReadRegister for Config {
     }
 }
 
+#[derive(PrintTable)]
 pub struct GyroConfig {
     pub x_st: bool,
     pub y_st: bool,
@@ -216,6 +217,7 @@ impl ReadRegister for GyroConfig {
     }
 }
 
+#[derive(PrintTable)]
 pub struct AccelConfig1 {
     // X accel self-test
     pub x_st: bool,
@@ -260,6 +262,7 @@ impl ReadRegister for AccelConfig1 {
     }
 }
 
+#[derive(PrintTable)]
 pub struct AccelConfig2 {
     // Averaging filter settings for Low Power Accelerometer mode:
     // 0b00 = Average 4 samples
