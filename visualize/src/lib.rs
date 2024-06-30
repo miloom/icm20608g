@@ -31,6 +31,7 @@ pub fn visualize(item: TokenStream) -> TokenStream {
                 impl #struct_name {
                     pub fn print_table(&self, i2c: &mut I2c) -> Result<()> {
                         Self::assert_impl_ReadRegister();
+                        println!("{}", stringify!(#struct_name));
                         let table = vec![
                             #(#table_rows),*
                         ]
