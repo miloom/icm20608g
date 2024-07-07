@@ -485,7 +485,7 @@ impl ReadRegister for FifoEnable {
     }
 }
 
-struct FsyncInterrupt {
+pub struct FsyncInterrupt {
     // This bit automatically sets to 1 when a FSYNC interrupt has been generated.
     // The bit clears to 0 after the register has been read.
     pub fsync_int: bool,
@@ -506,7 +506,7 @@ impl ReadRegister for FsyncInterrupt {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct InterruptPinConfig {
+pub struct InterruptPinConfig {
     // 1 – The logic level for INT/DRDY pin is active low.
     // 0 – The logic level for INT/DRDY pin is active high.
     pub int_level: bool,
@@ -560,7 +560,7 @@ impl ReadRegister for InterruptPinConfig {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct InterruptEnable {
+pub struct InterruptEnable {
     // 1 – Enable WoM interrupt on accelerometer.
     // 0 – Disable WoM interrupt on accelerometer.
     pub wom_int_en: bool,
@@ -603,7 +603,7 @@ impl ReadRegister for InterruptEnable {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct InterruptStatus {
+pub struct InterruptStatus {
     // Accelerometer WoM interrupt status. Cleared on Read.
     // 111 – WoM interrupt on acceleromete.
     pub wom_int: bool,
@@ -634,7 +634,7 @@ impl ReadRegister for InterruptStatus {
     }
 }
 
-struct AccelMeasurements {
+pub struct AccelMeasurements {
     pub x: i16,
     pub y: i16,
     pub z: i16,
@@ -666,7 +666,7 @@ impl ReadRegister for AccelMeasurements {
     }
 }
 
-struct TemperatureMeasurements {
+pub struct TemperatureMeasurements {
     // TEMP_degC = ((TEMP_OUT – RoomTemp_Offset)/Temp_Sensitivity) + 25degC
     pub temp_out: i16,
 }
@@ -687,19 +687,19 @@ impl ReadRegister for TemperatureMeasurements {
     }
 }
 
-struct GyroscopeMeasurements {
+pub struct GyroscopeMeasurements {
     // GYRO_XOUT = Gyro_Sensitivity * X_angular_rate
     // Nominal      FS_SEL = 0
     // Conditions   Gyro_Sensitivity = 131 LSB/(º/s)
-    x: i16,
+    pub x: i16,
     // GYRO_YOUT = Gyro_Sensitivity * Y_angular_rate
     // Nominal      FS_SEL = 0
     // Conditions   Gyro_Sensitivity = 131 LSB/(º/s)
-    y: i16,
+    pub y: i16,
     // GYRO_ZOUT = Gyro_Sensitivity * Z_angular_rate
     // Nominal      FS_SEL = 0
     // Conditions   Gyro_Sensitivity = 131 LSB/(º/s)
-    z: i16,
+    pub z: i16,
 }
 impl GyroscopeMeasurements {
     const ADDRESS_XH: u8 = 0x43;
@@ -724,6 +724,226 @@ impl ReadRegister for GyroscopeMeasurements {
             x: (i16::from(x_high) << 8) | i16::from(x_low),
             y: (i16::from(y_high) << 8) | i16::from(y_low),
             z: (i16::from(z_high) << 8) | i16::from(z_low),
+        })
+    }
+}
+
+pub struct SignalPathReset {
+    // Reset accel digital signal path. Note: Sensor registers are not cleared.
+    // Use UserControl.sig_cond_rst to clear sensor registers.
+    pub accel_rst: bool,
+    // Reset temp digital signal path. Note: Sensor registers are not cleared.
+    // Use UserControl.sig_cond_rst to clear sensor registers.
+    pub temp_rst: bool,
+}
+impl SignalPathReset {
+    const ADDRESS: u8 = 0x68;
+}
+impl WriteRegister for SignalPathReset {
+    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+        let write_buf = (u8::from(self.accel_rst) << 1) | u8::from(self.temp_rst);
+        i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        Ok(())
+    }
+}
+impl ReadRegister for SignalPathReset {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        Ok(Self {
+            accel_rst: ((read_buf >> 1) & 1) != 0,
+            temp_rst: (read_buf & 1) != 0,
+        })
+    }
+}
+
+pub struct IntelligenceControl {
+    // This bit enables the Wake-on-Motion detection logic
+    pub accel_intel_en: bool,
+    // false – Do not use.
+    // true – Compare the current sample with the previous sample.
+    pub accel_intel_mode: bool,
+}
+impl IntelligenceControl {
+    const ADDRESS: u8 = 0x69;
+}
+impl WriteRegister for IntelligenceControl {
+    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+        let write_buf =
+            (u8::from(self.accel_intel_en) << 7) | (u8::from(self.accel_intel_mode) << 6);
+        i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        Ok(())
+    }
+}
+impl ReadRegister for IntelligenceControl {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        Ok(Self {
+            accel_intel_en: (read_buf >> 7) != 0,
+            accel_intel_mode: ((read_buf >> 6) & 1) != 0,
+        })
+    }
+}
+
+#[allow(clippy::struct_excessive_bools)]
+pub struct UserControl {
+    // true – Enable FIFO operation mode.
+    // false – Disable FIFO access from serial interface. To disable FIFO writes by DMA, use FIFO_EN register.
+    pub fifo_en: bool,
+    // true – Disable I2C Slave module and put the serial interface in SPI mode only.
+    pub i2c_if_dis: bool,
+    // 1 – Reset FIFO module. Reset is asynchronous. This bit auto clears after one clock cycle of the internal 20MHz clock
+    pub fifo_rst: bool,
+    // 1 – Reset all gyro digital signal path, accel digital signal path, and temp digital signal path. This bit also clears all the sensor registers.
+    pub sig_cond_rst: bool,
+}
+impl UserControl {
+    const ADDRESS: u8 = 0x6A;
+}
+impl WriteRegister for UserControl {
+    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+        let write_buf = (u8::from(self.fifo_en) << 6)
+            | (u8::from(self.i2c_if_dis) << 4)
+            | (u8::from(self.fifo_rst) << 2)
+            | u8::from(self.sig_cond_rst);
+        i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        Ok(())
+    }
+}
+impl ReadRegister for UserControl {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        Ok(Self {
+            fifo_en: ((read_buf >> 6) & 1) != 0,
+            i2c_if_dis: ((read_buf >> 4) & 1) != 0,
+            fifo_rst: ((read_buf >> 2) & 1) != 0,
+            sig_cond_rst: (read_buf & 1) != 0,
+        })
+    }
+}
+
+pub struct FifoCountRegisters {
+    // Indicates the number of written bytes in the FIFO
+    pub fifo_count: u16,
+}
+impl FifoCountRegisters {
+    const ADDRESS_H: u8 = 0x72;
+    const ADDRESS_L: u8 = 0x73;
+}
+impl ReadRegister for FifoCountRegisters {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf_h = i2c.smbus_read_byte(Self::ADDRESS_H)?;
+        let read_buf_l = i2c.smbus_read_byte(Self::ADDRESS_L)?;
+        Ok(Self {
+            fifo_count: (u16::from(read_buf_h) << 8) | u16::from(read_buf_l),
+        })
+    }
+}
+
+pub struct FifoReadWrite {
+    // Data to/from fifo
+    pub fifo_data: Option<u8>,
+}
+impl FifoReadWrite {
+    const ADDRESS: u8 = 0x74;
+}
+impl WriteRegister for FifoReadWrite {
+    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+        i2c.smbus_write_byte(Self::ADDRESS, self.fifo_data.unwrap_or_default())?;
+        Ok(())
+    }
+}
+impl ReadRegister for FifoReadWrite {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        Ok(Self {
+            fifo_data: if read_buf == 0xFF {
+                None
+            } else {
+                Some(read_buf)
+            },
+        })
+    }
+}
+
+pub struct AccelOffset {
+    pub x_offs: i16,
+    pub y_offs: i16,
+    pub z_offs: i16,
+}
+impl AccelOffset {
+    const ADDRESS_XH: u8 = 0x77;
+    const ADDRESS_XL: u8 = 0x78;
+    const ADDRESS_YH: u8 = 0x7A;
+    const ADDRESS_YL: u8 = 0x7B;
+    const ADDRESS_ZH: u8 = 0x7D;
+    const ADDRESS_ZL: u8 = 0x7E;
+}
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+impl WriteRegister for AccelOffset {
+    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+        let write_buf = (self.x_offs >> 7) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_XH, write_buf)?;
+        let write_buf = (self.x_offs << 1) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_XL, write_buf)?;
+        let write_buf = (self.y_offs >> 7) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_YH, write_buf)?;
+        let write_buf = (self.y_offs << 1) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_YL, write_buf)?;
+        let write_buf = (self.z_offs >> 7) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_ZH, write_buf)?;
+        let write_buf = (self.z_offs << 1) as u8;
+        i2c.smbus_write_byte(Self::ADDRESS_ZL, write_buf)?;
+        Ok(())
+    }
+}
+impl ReadRegister for AccelOffset {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
+        let x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
+        let y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
+        let y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
+        let z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
+        let z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        Ok(Self {
+            x_offs: (i16::from(x_high) << 7) | (i16::from(x_low) >> 1),
+            y_offs: (i16::from(y_high) << 7) | (i16::from(y_low) >> 1),
+            z_offs: (i16::from(z_high) << 7) | (i16::from(z_low) >> 1),
+        })
+    }
+}
+
+pub struct WhoAmI {
+    pub device_id: u8,
+}
+impl WhoAmI {
+    const ADDRESS: u8 = 0x75;
+}
+impl ReadRegister for WhoAmI {
+    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        Ok(Self {
+            device_id: read_buf,
         })
     }
 }
