@@ -4,9 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cli-table = "0.4.7"
-rppal = "0.18.0"
-visualize = { path = "./visualize" }
+cli-table = { version = "0.4.7", optional = true }
+rppal = { version = "0.22.1", optional = true }
+visualize = { path = "./visualize", optional = true }
+embedded-hal = { version = "1.0.0", optional = true }
+
+[dependencies.arduino-hal]
+git = "https://github.com/rahix/avr-hal"
+features = ["arduino-uno"]
+optional = true
 
 [features]
-visualize = []
+default = ["rpi"]
+visualize = ["dep:visualize", "dep:cli-table"]
+rpi = ["dep:rppal"]
+embedded = ["dep:embedded-hal", "dep:arduino-hal"]

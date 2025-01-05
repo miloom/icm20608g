@@ -1,12 +1,22 @@
-use rppal::i2c::Error;
-// #[cfg(feature = "visualize")]
+#[cfg(feature = "embedded")]
+use arduino_hal::prelude::*;
+#[cfg(feature = "embedded")]
+use arduino_hal::I2c;
+#[cfg(feature = "visualize")]
 use cli_table::{print_stdout, Cell, Style, Table};
-// #[cfg(feature = "visualize")]
+#[cfg(feature = "embedded")]
+use core::prelude::rust_2021::*;
+#[cfg(feature = "rpi")]
+use rppal::i2c::Error;
+#[cfg(feature = "rpi")]
 use rppal::i2c::I2c;
-// #[cfg(feature = "visualize")]
+#[cfg(feature = "visualize")]
 use visualize::PrintTable;
 
+#[cfg(feature = "rpi")]
 pub type Result<T> = std::result::Result<T, Error>;
+#[cfg(feature = "embedded")]
+pub type Result<T> = core::result::Result<T, arduino_hal::i2c::Error>;
 
 pub struct Vec3<T> {
     pub x: T,
@@ -19,7 +29,7 @@ pub trait WriteRegister {
     ///
     /// # Errors
     /// Will error if unable to communicate with the device
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()>;
+    fn write(&self, i2c: &mut I2c) -> Result<()>;
 }
 
 pub trait ReadRegister {
@@ -27,13 +37,13 @@ pub trait ReadRegister {
     ///
     /// # Errors
     /// Will error if unable to communicate with the device
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized;
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct PowerManagement1 {
     pub device_reset: bool,
     pub sleep: bool,
@@ -47,23 +57,37 @@ impl PowerManagement1 {
 }
 
 impl WriteRegister for PowerManagement1 {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = u8::from(self.device_reset) << 7
             | u8::from(self.sleep) << 6
             | u8::from(self.accel_cycle) << 5
             | u8::from(self.gyro_standby) << 4
             | u8::from(self.temperature_disabled) << 3
             | (self.clock_select & 0b111);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for PowerManagement1 {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         println!("Read {read_buf:b}");
         Ok(Self {
             device_reset: (read_buf >> 7) != 0,
@@ -77,7 +101,7 @@ impl ReadRegister for PowerManagement1 {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct PowerManagement2 {
     pub fifo_lp: bool,
     pub stby_xaccel: bool,
@@ -91,7 +115,7 @@ impl PowerManagement2 {
     pub const ADDRESS: u8 = 0x6C;
 }
 impl WriteRegister for PowerManagement2 {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = u8::from(self.fifo_lp) << 7
             | u8::from(self.stby_xaccel) << 5
             | u8::from(self.stby_yaccel) << 4
@@ -99,16 +123,33 @@ impl WriteRegister for PowerManagement2 {
             | u8::from(self.stby_xgyro) << 2
             | u8::from(self.stby_ygyro) << 1
             | u8::from(self.stby_zgyro);
+
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for PowerManagement2 {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             fifo_lp: (read_buf >> 7) != 0,
             stby_xaccel: ((read_buf >> 5) & 1) != 0,
@@ -121,7 +162,7 @@ impl ReadRegister for PowerManagement2 {
     }
 }
 
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct Config {
     // FirstInFirstOut mode.
     // 1 - when buffer is full additional writes will not be written,
@@ -144,20 +185,36 @@ impl Config {
     const ADDRESS: u8 = 0x1A;
 }
 impl WriteRegister for Config {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.fifo_mode) << 6)
             | ((self.ext_sync_set & 0b111) << 3)
             | (self.dlpf_cfg & 0b111);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for Config {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             fifo_mode: (read_buf >> 6) & 1 != 0,
             ext_sync_set: (read_buf >> 3) & 0b111,
@@ -166,7 +223,7 @@ impl ReadRegister for Config {
     }
 }
 
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct GyroConfig {
     pub x_st: bool,
     pub y_st: bool,
@@ -183,22 +240,38 @@ impl GyroConfig {
     const ADDRESS: u8 = 0x1B;
 }
 impl WriteRegister for GyroConfig {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.x_st) << 7)
             | (u8::from(self.y_st) << 6)
             | (u8::from(self.z_st) << 5)
             | ((self.full_scale_select & 0b11) << 3)
             | (self.fchoice_b & 0b11);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for GyroConfig {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             x_st: (read_buf >> 7) != 0,
             y_st: ((read_buf >> 6) & 1) != 0,
@@ -209,7 +282,7 @@ impl ReadRegister for GyroConfig {
     }
 }
 
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct AccelConfig1 {
     // X accel self-test
     pub x_st: bool,
@@ -228,21 +301,41 @@ impl AccelConfig1 {
     const ADDRESS: u8 = 0x1C;
 }
 impl WriteRegister for AccelConfig1 {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.x_st) << 7)
             | (u8::from(self.y_st) << 6)
             | (u8::from(self.z_st) << 5)
             | ((self.full_scale_select & 0b11) << 3);
-        i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "rpi")]
+        {
+            i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.write(Self::ADDRESS, &[write_buf])?;
+        }
         Ok(())
     }
 }
 impl ReadRegister for AccelConfig1 {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             x_st: (read_buf >> 7) != 0,
             y_st: ((read_buf >> 6) & 1) != 0,
@@ -252,7 +345,7 @@ impl ReadRegister for AccelConfig1 {
     }
 }
 
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct AccelConfig2 {
     // Averaging filter settings for Low Power Accelerometer mode:
     // 0b00 = Average 4 samples
@@ -269,20 +362,34 @@ impl AccelConfig2 {
     const ADDRESS: u8 = 0x1D;
 }
 impl WriteRegister for AccelConfig2 {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = ((self.dec2_cfg & 0b11) << 4)
             | (u8::from(self.accel_fchoice_b) << 3)
             | (self.dlpf_cfg & 0b111);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for AccelConfig2 {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             dec2_cfg: ((read_buf >> 4) & 0b11),
             accel_fchoice_b: ((read_buf >> 3) & 1) != 0,
@@ -291,7 +398,7 @@ impl ReadRegister for AccelConfig2 {
     }
 }
 
-#[derive(PrintTable)]
+#[cfg_attr(feature = "visualize", derive(PrintTable))]
 pub struct GyroOffset {
     // X offset to gyro to remove DC bias. Applied before write to register.
     pub xg_offs: i16,
@@ -310,34 +417,71 @@ impl GyroOffset {
 }
 #[allow(clippy::cast_sign_loss)]
 impl WriteRegister for GyroOffset {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let x_high = (self.xg_offs >> 8) as u8;
         let x_low = (self.xg_offs & 0xFF) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_XH, x_high)?;
-        i2c.smbus_write_byte(Self::ADDRESS_XL, x_low)?;
         let y_high = (self.yg_offs >> 8) as u8;
         let y_low = (self.yg_offs & 0xFF) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_YH, y_high)?;
-        i2c.smbus_write_byte(Self::ADDRESS_YL, y_low)?;
         let z_high = (self.zg_offs >> 8) as u8;
         let z_low = (self.zg_offs & 0xFF) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_ZH, z_high)?;
-        i2c.smbus_write_byte(Self::ADDRESS_ZL, z_low)?;
+        #[cfg(feature = "rpi")]
+        {
+            i2c.smbus_write_byte(Self::ADDRESS_XH, x_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_XL, x_low)?;
+            i2c.smbus_write_byte(Self::ADDRESS_YH, y_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_YL, y_low)?;
+            i2c.smbus_write_byte(Self::ADDRESS_ZH, z_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_ZL, z_low)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.write(Self::ADDRESS_XH, &[x_high])?;
+            i2c.write(Self::ADDRESS_XL, &[x_low])?;
+            i2c.write(Self::ADDRESS_YH, &[y_high])?;
+            i2c.write(Self::ADDRESS_YL, &[y_low])?;
+            i2c.write(Self::ADDRESS_ZH, &[z_high])?;
+            i2c.write(Self::ADDRESS_ZL, &[z_low])?;
+        }
         Ok(())
     }
 }
 
 impl ReadRegister for GyroOffset {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
-        let x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
-        let y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
-        let y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
-        let z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
-        let z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        let x_high;
+        let x_low;
+        let y_high;
+        let y_low;
+        let z_high;
+        let z_low;
+        #[cfg(feature = "rpi")]
+        {
+            x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
+            x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
+            y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
+            y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
+            z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
+            z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+            x_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+            x_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+            y_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+            y_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+            z_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+            z_low = temp_buf[0];
+        }
         Ok(Self {
             xg_offs: (i16::from(x_high) << 8) | i16::from(x_low),
             yg_offs: (i16::from(y_high) << 8) | i16::from(y_low),
@@ -353,17 +497,37 @@ impl SampleRateDivider {
     const ADDRESS: u8 = 0x19;
 }
 impl WriteRegister for SampleRateDivider {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
-        i2c.smbus_write_byte(Self::ADDRESS, self.smplrt_div)?;
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
+        #[cfg(feature = "rpi")]
+        {
+            i2c.smbus_write_byte(Self::ADDRESS, self.smplrt_div)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.write(Self::ADDRESS, &[self.smplrt_div])?;
+        }
         Ok(())
     }
 }
 impl ReadRegister for SampleRateDivider {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let smplrt_div = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut smplrt_div = [0];
+        #[cfg(feature = "rpi")]
+        {
+            smplrt_div = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut smplrt_div)?;
+        }
+        let smplrt_div = smplrt_div[0];
         Ok(Self { smplrt_div })
     }
 }
@@ -392,20 +556,40 @@ impl LowPowerModeConf {
     const ADDRESS: u8 = 0x1E;
 }
 impl WriteRegister for LowPowerModeConf {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.gyro_cycle) << 7)
             | ((self.g_avgcfg & 0b111) << 4)
             | (self.lposc_clksel & 0b1111);
-        i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "rpi")]
+        {
+            i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.write(Self::ADDRESS, &[write_buf])?;
+        }
         Ok(())
     }
 }
 impl ReadRegister for LowPowerModeConf {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             gyro_cycle: ((read_buf >> 7) != 0),
             g_avgcfg: ((read_buf >> 4) & 0b111),
@@ -422,17 +606,31 @@ impl WakeOnMotion {
     const ADDRESS: u8 = 0x1F;
 }
 impl WriteRegister for WakeOnMotion {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, self.wom_thr)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[self.wom_thr])?;
         Ok(())
     }
 }
 impl ReadRegister for WakeOnMotion {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let wom_thr = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut wom_thr = [0];
+        #[cfg(feature = "rpi")]
+        {
+            wom_thr = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut wom_thr)?;
+        let wom_thr = wom_thr[0];
         Ok(Self { wom_thr })
     }
 }
@@ -459,22 +657,38 @@ impl FifoEnable {
     const ADDRESS: u8 = 0x23;
 }
 impl WriteRegister for FifoEnable {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.temp_fifo_en) << 7)
             | (u8::from(self.xg_fifo_en) << 6)
             | (u8::from(self.yg_fifo_en) << 5)
             | (u8::from(self.zg_fifo_en) << 4)
             | (u8::from(self.accel_fifo_en) << 3);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for FifoEnable {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             temp_fifo_en: (read_buf >> 7) != 0,
             xg_fifo_en: ((read_buf >> 6) & 1) != 0,
@@ -494,11 +708,24 @@ impl FsyncInterrupt {
     const ADDRESS: u8 = 0x36;
 }
 impl ReadRegister for FsyncInterrupt {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.read(Self::ADDRESS, &mut read_buf)?;
+        }
+        let read_buf = read_buf[0];
         Ok(Self {
             fsync_int: (read_buf >> 7) != 0,
         })
@@ -531,23 +758,37 @@ impl InterruptPinConfig {
     const ADDRESS: u8 = 0x37;
 }
 impl WriteRegister for InterruptPinConfig {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.int_level) << 7)
             | (u8::from(self.int_open) << 6)
             | (u8::from(self.latch_int_en) << 5)
             | (u8::from(self.int_rd_clear) << 4)
             | (u8::from(self.fsync_int_level) << 3)
             | (u8::from(self.fsync_int_mode_en) << 2);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for InterruptPinConfig {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             int_level: (read_buf >> 7) != 0,
             int_open: ((read_buf >> 6) & 1) != 0,
@@ -576,23 +817,37 @@ impl InterruptEnable {
     const ADDRESS: u8 = 0x38;
 }
 impl WriteRegister for InterruptEnable {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.wom_int_en) << 7)
             | (u8::from(self.wom_int_en) << 6)
             | (u8::from(self.wom_int_en) << 5)
             | (u8::from(self.fifo_oflow_en) << 4)
             | (u8::from(self.gdrive_int_en) << 2)
             | u8::from(self.data_rdy_int_en);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for InterruptEnable {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             wom_int_en: (read_buf >> 7) != 0,
             fifo_oflow_en: ((read_buf >> 4) & 1) != 0,
@@ -620,11 +875,22 @@ impl InterruptStatus {
     const ADDRESS: u8 = 0x3A;
 }
 impl ReadRegister for InterruptStatus {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             wom_int: (read_buf >> 7) != 0,
             fifo_oflow_int: ((read_buf >> 4) & 1) != 0,
@@ -648,16 +914,41 @@ impl AccelMeasurements {
     const ADDRESS_ZL: u8 = 0x40;
 }
 impl ReadRegister for AccelMeasurements {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
-        let x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
-        let y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
-        let y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
-        let z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
-        let z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        let x_high;
+        let x_low;
+        let y_high;
+        let y_low;
+        let z_high;
+        let z_low;
+        #[cfg(feature = "rpi")]
+        {
+            x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
+            x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
+            y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
+            y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
+            z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
+            z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+            x_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+            x_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+            y_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+            y_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+            z_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+            z_low = temp_buf[0];
+        }
         Ok(Self {
             x: (i16::from(x_high) << 8) | i16::from(x_low),
             y: (i16::from(y_high) << 8) | i16::from(y_low),
@@ -675,12 +966,25 @@ impl TemperatureMeasurements {
     const ADDRESS_L: u8 = 0x42;
 }
 impl ReadRegister for TemperatureMeasurements {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let temp_high = i2c.smbus_read_byte(Self::ADDRESS_H)?;
-        let temp_low = i2c.smbus_read_byte(Self::ADDRESS_L)?;
+        let temp_high;
+        let temp_low;
+        #[cfg(feature = "rpi")]
+        {
+            temp_high = i2c.smbus_read_byte(Self::ADDRESS_H)?;
+            temp_low = i2c.smbus_read_byte(Self::ADDRESS_L)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_H, &mut temp_buf)?;
+            temp_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_L, &mut temp_buf)?;
+            temp_low = temp_buf[0];
+        }
         Ok(Self {
             temp_out: (i16::from(temp_high) << 8) | i16::from(temp_low),
         })
@@ -710,16 +1014,41 @@ impl GyroscopeMeasurements {
     const ADDRESS_ZL: u8 = 0x48;
 }
 impl ReadRegister for GyroscopeMeasurements {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
-        let x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
-        let y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
-        let y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
-        let z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
-        let z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        let x_high;
+        let x_low;
+        let y_high;
+        let y_low;
+        let z_high;
+        let z_low;
+        #[cfg(feature = "rpi")]
+        {
+            x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
+            x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
+            y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
+            y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
+            z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
+            z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+            x_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+            x_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+            y_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+            y_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+            z_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+            z_low = temp_buf[0];
+        }
         Ok(Self {
             x: (i16::from(x_high) << 8) | i16::from(x_low),
             y: (i16::from(y_high) << 8) | i16::from(y_low),
@@ -740,18 +1069,32 @@ impl SignalPathReset {
     const ADDRESS: u8 = 0x68;
 }
 impl WriteRegister for SignalPathReset {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.accel_rst) << 1) | u8::from(self.temp_rst);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for SignalPathReset {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             accel_rst: ((read_buf >> 1) & 1) != 0,
             temp_rst: (read_buf & 1) != 0,
@@ -770,19 +1113,33 @@ impl IntelligenceControl {
     const ADDRESS: u8 = 0x69;
 }
 impl WriteRegister for IntelligenceControl {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf =
             (u8::from(self.accel_intel_en) << 7) | (u8::from(self.accel_intel_mode) << 6);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for IntelligenceControl {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             accel_intel_en: (read_buf >> 7) != 0,
             accel_intel_mode: ((read_buf >> 6) & 1) != 0,
@@ -806,21 +1163,35 @@ impl UserControl {
     const ADDRESS: u8 = 0x6A;
 }
 impl WriteRegister for UserControl {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
         let write_buf = (u8::from(self.fifo_en) << 6)
             | (u8::from(self.i2c_if_dis) << 4)
             | (u8::from(self.fifo_rst) << 2)
             | u8::from(self.sig_cond_rst);
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, write_buf)?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[write_buf])?;
         Ok(())
     }
 }
 impl ReadRegister for UserControl {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             fifo_en: ((read_buf >> 6) & 1) != 0,
             i2c_if_dis: ((read_buf >> 4) & 1) != 0,
@@ -839,14 +1210,28 @@ impl FifoCountRegisters {
     const ADDRESS_L: u8 = 0x73;
 }
 impl ReadRegister for FifoCountRegisters {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf_h = i2c.smbus_read_byte(Self::ADDRESS_H)?;
-        let read_buf_l = i2c.smbus_read_byte(Self::ADDRESS_L)?;
+        let read_h;
+        let read_l;
+        #[cfg(feature = "rpi")]
+        {
+            read_h = i2c.smbus_read_byte(Self::ADDRESS_H)?;
+            read_l = i2c.smbus_read_byte(Self::ADDRESS_L)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_H, &mut temp_buf)?;
+            read_h = temp_buf[0];
+            i2c.read(Self::ADDRESS_L, &mut temp_buf)?;
+            read_l = temp_buf[0];
+        }
+
         Ok(Self {
-            fifo_count: (u16::from(read_buf_h) << 8) | u16::from(read_buf_l),
+            fifo_count: (u16::from(read_h) << 8) | u16::from(read_l),
         })
     }
 }
@@ -859,17 +1244,31 @@ impl FifoReadWrite {
     const ADDRESS: u8 = 0x74;
 }
 impl WriteRegister for FifoReadWrite {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
+        #[cfg(feature = "rpi")]
         i2c.smbus_write_byte(Self::ADDRESS, self.fifo_data.unwrap_or_default())?;
+        #[cfg(feature = "embedded")]
+        i2c.write(Self::ADDRESS, &[self.fifo_data.unwrap_or_default()])?;
         Ok(())
     }
 }
 impl ReadRegister for FifoReadWrite {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             fifo_data: if read_buf == 0xFF {
                 None
@@ -895,33 +1294,71 @@ impl AccelOffset {
 }
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 impl WriteRegister for AccelOffset {
-    fn write(&self, i2c: &mut rppal::i2c::I2c) -> Result<()> {
-        let write_buf = (self.x_offs >> 7) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_XH, write_buf)?;
-        let write_buf = (self.x_offs << 1) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_XL, write_buf)?;
-        let write_buf = (self.y_offs >> 7) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_YH, write_buf)?;
-        let write_buf = (self.y_offs << 1) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_YL, write_buf)?;
-        let write_buf = (self.z_offs >> 7) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_ZH, write_buf)?;
-        let write_buf = (self.z_offs << 1) as u8;
-        i2c.smbus_write_byte(Self::ADDRESS_ZL, write_buf)?;
+    fn write(&self, i2c: &mut I2c) -> Result<()> {
+        let x_high = (self.x_offs >> 7) as u8;
+        let x_low = (self.x_offs << 1) as u8;
+        let y_high = (self.y_offs >> 7) as u8;
+        let y_low = (self.y_offs << 1) as u8;
+        let z_high = (self.z_offs >> 7) as u8;
+        let z_low = (self.z_offs << 1) as u8;
+        #[cfg(feature = "rpi")]
+        {
+            i2c.smbus_write_byte(Self::ADDRESS_XH, x_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_XL, x_low)?;
+            i2c.smbus_write_byte(Self::ADDRESS_YH, y_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_YL, y_low)?;
+            i2c.smbus_write_byte(Self::ADDRESS_ZH, z_high)?;
+            i2c.smbus_write_byte(Self::ADDRESS_ZL, z_low)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            i2c.write(Self::ADDRESS_XH, &[x_high])?;
+            i2c.write(Self::ADDRESS_XL, &[x_low])?;
+            i2c.write(Self::ADDRESS_YH, &[y_high])?;
+            i2c.write(Self::ADDRESS_YL, &[y_low])?;
+            i2c.write(Self::ADDRESS_ZH, &[z_high])?;
+            i2c.write(Self::ADDRESS_ZL, &[z_low])?;
+        }
         Ok(())
     }
 }
 impl ReadRegister for AccelOffset {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
-        let x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
-        let y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
-        let y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
-        let z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
-        let z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        let x_high;
+        let x_low;
+        let y_high;
+        let y_low;
+        let z_high;
+        let z_low;
+        #[cfg(feature = "rpi")]
+        {
+            x_high = i2c.smbus_read_byte(Self::ADDRESS_XH)?;
+            x_low = i2c.smbus_read_byte(Self::ADDRESS_XL)?;
+            y_high = i2c.smbus_read_byte(Self::ADDRESS_YH)?;
+            y_low = i2c.smbus_read_byte(Self::ADDRESS_YL)?;
+            z_high = i2c.smbus_read_byte(Self::ADDRESS_ZH)?;
+            z_low = i2c.smbus_read_byte(Self::ADDRESS_ZL)?;
+        }
+        #[cfg(feature = "embedded")]
+        {
+            let mut temp_buf = [0];
+            i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+            x_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+            x_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+            y_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+            y_low = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+            z_high = temp_buf[0];
+            i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+            z_low = temp_buf[0];
+        }
+
         Ok(Self {
             x_offs: (i16::from(x_high) << 7) | (i16::from(x_low) >> 1),
             y_offs: (i16::from(y_high) << 7) | (i16::from(y_low) >> 1),
@@ -937,11 +1374,22 @@ impl WhoAmI {
     const ADDRESS: u8 = 0x75;
 }
 impl ReadRegister for WhoAmI {
-    fn new(i2c: &mut rppal::i2c::I2c) -> Result<Self>
+    fn new(i2c: &mut I2c) -> Result<Self>
     where
         Self: Sized,
     {
-        let read_buf = i2c.smbus_read_byte(Self::ADDRESS)?;
+        #[allow(
+            unused_assignments,
+            reason = "Embedded version doesn't initialize the value itself"
+        )]
+        let mut read_buf = [0];
+        #[cfg(feature = "rpi")]
+        {
+            read_buf = [i2c.smbus_read_byte(Self::ADDRESS)?];
+        }
+        #[cfg(feature = "embedded")]
+        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        let read_buf = read_buf[0];
         Ok(Self {
             device_id: read_buf,
         })
