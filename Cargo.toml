@@ -1,13 +1,2 @@
-[package]
-name = "icm20608g"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-cli-table = { version = "0.4.7", optional = true }
-visualize = { path = "./visualize", optional = true }
-embedded-hal = { version = "1.0.0" }
-
-
-[features]
-visualize = ["dep:visualize", "dep:cli-table"]
+[workspace]
+members = ["icm20608g", "visualize"]
