@@ -1,6 +1,5 @@
 extern crate proc_macro;
 
-use proc_macro2;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, Fields};
@@ -29,7 +28,7 @@ pub fn visualize(item: TokenStream) -> TokenStream {
 
             quote! {
                 impl #struct_name {
-                    pub fn print_table(&self, i2c: &mut I2c) -> Result<()> {
+                    pub fn print_table<I: I2c>(&self, i2c: &mut I) -> Result<(), std::io::Error> {
                         Self::assert_impl_ReadRegister();
                         println!("{}", stringify!(#struct_name));
                         let table = vec![
