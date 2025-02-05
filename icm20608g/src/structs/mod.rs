@@ -5,6 +5,8 @@ use visualize::PrintTable;
 use embedded_hal::i2c::I2c;
 
 
+const IMU_ADDR: u8 = 0x68;
+
 pub struct Vec3<T> {
     pub x: T,
     pub y: T,
@@ -51,7 +53,7 @@ impl WriteRegister for PowerManagement1 {
             | u8::from(self.gyro_standby) << 4
             | u8::from(self.temperature_disabled) << 3
             | (self.clock_select & 0b111);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -61,7 +63,7 @@ impl ReadRegister for PowerManagement1 {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             device_reset: (read_buf >> 7) != 0,
@@ -97,7 +99,7 @@ impl WriteRegister for PowerManagement2 {
             | u8::from(self.stby_xgyro) << 2
             | u8::from(self.stby_ygyro) << 1
             | u8::from(self.stby_zgyro);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -107,7 +109,7 @@ impl ReadRegister for PowerManagement2 {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             fifo_lp: (read_buf >> 7) != 0,
@@ -148,7 +150,7 @@ impl WriteRegister for Config {
         let write_buf = (u8::from(self.fifo_mode) << 6)
             | ((self.ext_sync_set & 0b111) << 3)
             | (self.dlpf_cfg & 0b111);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -158,7 +160,7 @@ impl ReadRegister for Config {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             fifo_mode: (read_buf >> 6) & 1 != 0,
@@ -191,7 +193,7 @@ impl WriteRegister for GyroConfig {
             | (u8::from(self.z_st) << 5)
             | ((self.full_scale_select & 0b11) << 3)
             | (self.fchoice_b & 0b11);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -201,7 +203,7 @@ impl ReadRegister for GyroConfig {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             x_st: (read_buf >> 7) != 0,
@@ -237,7 +239,7 @@ impl WriteRegister for AccelConfig1 {
             | (u8::from(self.y_st) << 6)
             | (u8::from(self.z_st) << 5)
             | ((self.full_scale_select & 0b11) << 3);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -247,7 +249,7 @@ impl ReadRegister for AccelConfig1 {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             x_st: (read_buf >> 7) != 0,
@@ -279,7 +281,7 @@ impl WriteRegister for AccelConfig2 {
         let write_buf = ((self.dec2_cfg & 0b11) << 4)
             | (u8::from(self.accel_fchoice_b) << 3)
             | (self.dlpf_cfg & 0b111);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -289,7 +291,7 @@ impl ReadRegister for AccelConfig2 {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             dec2_cfg: ((read_buf >> 4) & 0b11),
@@ -325,12 +327,12 @@ impl WriteRegister for GyroOffset {
         let y_low = (self.yg_offs & 0xFF) as u8;
         let z_high = (self.zg_offs >> 8) as u8;
         let z_low = (self.zg_offs & 0xFF) as u8;
-        i2c.write(Self::ADDRESS_XH, &[x_high])?;
-        i2c.write(Self::ADDRESS_XL, &[x_low])?;
-        i2c.write(Self::ADDRESS_YH, &[y_high])?;
-        i2c.write(Self::ADDRESS_YL, &[y_low])?;
-        i2c.write(Self::ADDRESS_ZH, &[z_high])?;
-        i2c.write(Self::ADDRESS_ZL, &[z_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_XH, x_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_XL, x_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_YH, y_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_YL, y_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_ZH, z_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_ZL, z_low])?;
         Ok(())
     }
 }
@@ -341,17 +343,17 @@ impl ReadRegister for GyroOffset {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XH], &mut temp_buf)?;
         let x_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XL], &mut temp_buf)?;
         let x_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YH], &mut temp_buf)?;
         let y_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YL], &mut temp_buf)?;
         let y_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZH], &mut temp_buf)?;
         let z_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZL], &mut temp_buf)?;
         let z_low = temp_buf[0];
         Ok(Self {
             xg_offs: (i16::from(x_high) << 8) | i16::from(x_low),
@@ -369,7 +371,7 @@ impl SampleRateDivider {
 }
 impl WriteRegister for SampleRateDivider {
     fn write<I: I2c>(&self, i2c: &mut I) -> Result<(), I::Error> {
-        i2c.write(Self::ADDRESS, &[self.smplrt_div])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, self.smplrt_div])?;
         Ok(())
     }
 }
@@ -379,7 +381,7 @@ impl ReadRegister for SampleRateDivider {
         Self: Sized,
     {
         let mut smplrt_div = [0];
-        i2c.read(Self::ADDRESS, &mut smplrt_div)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut smplrt_div)?;
         let smplrt_div = smplrt_div[0];
         Ok(Self { smplrt_div })
     }
@@ -413,7 +415,7 @@ impl WriteRegister for LowPowerModeConf {
         let write_buf = (u8::from(self.gyro_cycle) << 7)
             | ((self.g_avgcfg & 0b111) << 4)
             | (self.lposc_clksel & 0b1111);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -423,7 +425,7 @@ impl ReadRegister for LowPowerModeConf {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             gyro_cycle: ((read_buf >> 7) != 0),
@@ -442,7 +444,7 @@ impl WakeOnMotion {
 }
 impl WriteRegister for WakeOnMotion {
     fn write<I: I2c>(&self, i2c: &mut I) -> Result<(), I::Error> {
-        i2c.write(Self::ADDRESS, &[self.wom_thr])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, self.wom_thr])?;
         Ok(())
     }
 }
@@ -452,7 +454,7 @@ impl ReadRegister for WakeOnMotion {
         Self: Sized,
     {
         let mut wom_thr = [0];
-        i2c.read(Self::ADDRESS, &mut wom_thr)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut wom_thr)?;
         let wom_thr = wom_thr[0];
         Ok(Self { wom_thr })
     }
@@ -486,7 +488,7 @@ impl WriteRegister for FifoEnable {
             | (u8::from(self.yg_fifo_en) << 5)
             | (u8::from(self.zg_fifo_en) << 4)
             | (u8::from(self.accel_fifo_en) << 3);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -496,7 +498,7 @@ impl ReadRegister for FifoEnable {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             temp_fifo_en: (read_buf >> 7) != 0,
@@ -522,7 +524,7 @@ impl ReadRegister for FsyncInterrupt {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             fsync_int: (read_buf >> 7) != 0,
@@ -563,7 +565,7 @@ impl WriteRegister for InterruptPinConfig {
             | (u8::from(self.int_rd_clear) << 4)
             | (u8::from(self.fsync_int_level) << 3)
             | (u8::from(self.fsync_int_mode_en) << 2);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -573,7 +575,7 @@ impl ReadRegister for InterruptPinConfig {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             int_level: (read_buf >> 7) != 0,
@@ -610,7 +612,7 @@ impl WriteRegister for InterruptEnable {
             | (u8::from(self.fifo_oflow_en) << 4)
             | (u8::from(self.gdrive_int_en) << 2)
             | u8::from(self.data_rdy_int_en);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -620,7 +622,7 @@ impl ReadRegister for InterruptEnable {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             wom_int_en: (read_buf >> 7) != 0,
@@ -654,7 +656,7 @@ impl ReadRegister for InterruptStatus {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             wom_int: (read_buf >> 7) != 0,
@@ -684,17 +686,17 @@ impl ReadRegister for AccelMeasurements {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XH], &mut temp_buf)?;
         let x_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XL], &mut temp_buf)?;
         let x_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YH], &mut temp_buf)?;
         let y_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YL], &mut temp_buf)?;
         let y_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZH], &mut temp_buf)?;
         let z_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZL], &mut temp_buf)?;
         let z_low = temp_buf[0];
         Ok(Self {
             x: (i16::from(x_high) << 8) | i16::from(x_low),
@@ -718,9 +720,9 @@ impl ReadRegister for TemperatureMeasurements {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_H, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_H], &mut temp_buf)?;
         let temp_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_L, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_L], &mut temp_buf)?;
         let temp_low = temp_buf[0];
         Ok(Self {
             temp_out: (i16::from(temp_high) << 8) | i16::from(temp_low),
@@ -756,17 +758,17 @@ impl ReadRegister for GyroscopeMeasurements {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XH], &mut temp_buf)?;
         let x_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XL], &mut temp_buf)?;
         let x_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YH], &mut temp_buf)?;
         let y_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YL], &mut temp_buf)?;
         let y_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZH], &mut temp_buf)?;
         let z_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZL], &mut temp_buf)?;
         let z_low = temp_buf[0];
         Ok(Self {
             x: (i16::from(x_high) << 8) | i16::from(x_low),
@@ -790,7 +792,7 @@ impl SignalPathReset {
 impl WriteRegister for SignalPathReset {
     fn write<I: I2c>(&self, i2c: &mut I) -> Result<(), I::Error> {
         let write_buf = (u8::from(self.accel_rst) << 1) | u8::from(self.temp_rst);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -800,7 +802,7 @@ impl ReadRegister for SignalPathReset {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             accel_rst: ((read_buf >> 1) & 1) != 0,
@@ -823,7 +825,7 @@ impl WriteRegister for IntelligenceControl {
     fn write<I: I2c>(&self, i2c: &mut I) -> Result<(), I::Error> {
         let write_buf =
             (u8::from(self.accel_intel_en) << 7) | (u8::from(self.accel_intel_mode) << 6);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -833,7 +835,7 @@ impl ReadRegister for IntelligenceControl {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             accel_intel_en: (read_buf >> 7) != 0,
@@ -863,7 +865,7 @@ impl WriteRegister for UserControl {
             | (u8::from(self.i2c_if_dis) << 4)
             | (u8::from(self.fifo_rst) << 2)
             | u8::from(self.sig_cond_rst);
-        i2c.write(Self::ADDRESS, &[write_buf])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, write_buf])?;
         Ok(())
     }
 }
@@ -873,7 +875,7 @@ impl ReadRegister for UserControl {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             fifo_en: ((read_buf >> 6) & 1) != 0,
@@ -898,9 +900,9 @@ impl ReadRegister for FifoCountRegisters {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_H, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_H], &mut temp_buf)?;
         let read_h = temp_buf[0];
-        i2c.read(Self::ADDRESS_L, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_L], &mut temp_buf)?;
         let read_l = temp_buf[0];
 
         Ok(Self {
@@ -918,7 +920,7 @@ impl FifoReadWrite {
 }
 impl WriteRegister for FifoReadWrite {
     fn write<I: I2c>(&self, i2c: &mut I) -> Result<(), I::Error> {
-        i2c.write(Self::ADDRESS, &[self.fifo_data.unwrap_or_default()])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS, self.fifo_data.unwrap_or_default()])?;
         Ok(())
     }
 }
@@ -928,7 +930,7 @@ impl ReadRegister for FifoReadWrite {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             fifo_data: if read_buf == 0xFF {
@@ -962,12 +964,12 @@ impl WriteRegister for AccelOffset {
         let y_low = (self.y_offs << 1) as u8;
         let z_high = (self.z_offs >> 7) as u8;
         let z_low = (self.z_offs << 1) as u8;
-        i2c.write(Self::ADDRESS_XH, &[x_high])?;
-        i2c.write(Self::ADDRESS_XL, &[x_low])?;
-        i2c.write(Self::ADDRESS_YH, &[y_high])?;
-        i2c.write(Self::ADDRESS_YL, &[y_low])?;
-        i2c.write(Self::ADDRESS_ZH, &[z_high])?;
-        i2c.write(Self::ADDRESS_ZL, &[z_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_XH, x_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_XL, x_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_YH, y_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_YL, y_low])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_ZH, z_high])?;
+        i2c.write(IMU_ADDR, &[Self::ADDRESS_ZL, z_low])?;
         Ok(())
     }
 }
@@ -977,17 +979,17 @@ impl ReadRegister for AccelOffset {
         Self: Sized,
     {
         let mut temp_buf = [0];
-        i2c.read(Self::ADDRESS_XH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XH], &mut temp_buf)?;
         let x_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_XL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_XL], &mut temp_buf)?;
         let x_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_YH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YH], &mut temp_buf)?;
         let y_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_YL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_YL], &mut temp_buf)?;
         let y_low = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZH, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZH], &mut temp_buf)?;
         let z_high = temp_buf[0];
-        i2c.read(Self::ADDRESS_ZL, &mut temp_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS_ZL], &mut temp_buf)?;
         let z_low = temp_buf[0];
 
         Ok(Self {
@@ -1010,7 +1012,7 @@ impl ReadRegister for WhoAmI {
         Self: Sized,
     {
         let mut read_buf = [0];
-        i2c.read(Self::ADDRESS, &mut read_buf)?;
+        i2c.write_read(IMU_ADDR, &[Self::ADDRESS], &mut read_buf)?;
         let read_buf = read_buf[0];
         Ok(Self {
             device_id: read_buf,
